@@ -73,7 +73,60 @@ def run_gold_eagle_tapper():
     driver.get(mini_app_url)
     time.sleep(5)
 
+    # حقن بيانات Session Storage
     driver.execute_script("""
         sessionStorage.setItem('tapps/launchParams', 'tgWebAppPlatform=ios&tgWebAppThemeParams=%7B%22bg_color%22%3A%22%23212121%22%2C%22button_color%22%3A%22%238774e1%22%2C%22button_text_color%22%3A%22%23ffffff%22%2C%22hint_color%22%3A%22%23aaaaaa%22%2C%22link_color%22%3A%22%238774e1%22%2C%22secondary_bg_color%22%3A%22%23181818%22%2C%22text_color%22%3A%22%23ffffff%22%2C%22header_bg_color%22%3A%22%23212121%22%2C%22accent_text_color%22%3A%22%238774e1%22%2C%22section_bg_color%22%3A%22%23212121%22%2C%22section_header_text_color%22%3A%22%238774e1%22%2C%22subtitle_text_color%22%3A%22%23aaaaaa%22%2C%22destructive_text_color%22%3A%22%23ff595a%22%7D&tgWebAppVersion=7.10&tgWebAppData=query_id%3DAAG8XExdAAAAALxcTF2ALyef%26user%3D%257B%2522id%2522%253A1565285564%252C%2522first_name%2522%253A%2522%E6%B0%94DARTON%E4%B9%88%2522%252C%2522last_name%2522%253A%2522%2522%252C%2522username%2522%253A%2522DartonTV%2522%252C%2522language_code%2522%253A%2522en%2522%252C%2522allows_write_to_pm%2522%253Atrue%257D');
         sessionStorage.setItem('__telegram__initParams', '{"tgWebAppData":"query_id=AAG8XExdAAAAALxcTF2ALyef&user=%7B%22id%22%3A1565285564%2C%22first_name%22%3A%22%E6%B0%94DARTON%E4%B9%88%22%2C%22last_name%22%3A%22%22%2C%22username%22%3A%22DartonTV%22%2C%22language_code%22%3A%22en%22%2C%22allows_write_to_pm%22%3Atrue%2C%22photo_url%22%3A%22https://t.me/i/userpic/320/iy3Hp0CdIo6mZaYfi83EHd7h2nPyXG1Fd5V50-SkD2I.svg%22%7D","auth_date":1741132592,"signature":"sGfdIFxIBcKtqrq2y6zzeUQNkypsglVlaN_LT8s1bp9EbnZVaNiSS7KapQx0llxh0IIjsx926e4oxpOyTPn5DA","hash":"970af2cd5d4ce4b680996870cf21e9762f1d387f096cf9eb1b58366724741d42"}');
-        sessionStorage.setItem('__telegram__themeParams', '{"bg_color":"#212121","button_color":"#8774e1","button_text_color":"#ffffff","hint_color":"#aaaaaa","link_color":"#8774e1","secondary_bg_color":"#181818","text_color":"#ffffff","header_bg_color":"#212121","accent_text_color":"
+        sessionStorage.setItem('__telegram__themeParams', '{"bg_color":"#212121","button_color":"#8774e1","button_text_color":"#ffffff","hint_color":"#aaaaaa","link_color":"#8774e1","secondary_bg_color":"#181818","text_color":"#ffffff","header_bg_color":"#212121","accent_text_color":"#8774e1","section_bg_color":"#212121","section_header_text_color":"#8774e1","subtitle_text_color":"#aaaaaa","destructive_text_color":"#ff595a"}');
+    """)
+    time.sleep(2)
+
+    # حقن JavaScript الخارجي
+    driver.execute_script("""
+        var script = document.createElement('script');
+        script.src = 'https://telegram.geagle.online/assets/index-BC9KxTS7.js';
+        document.head.appendChild(script);
+    """)
+    time.sleep(5)
+
+    try:
+        coin_element = driver.find_element(By.XPATH, "//*[contains(@style, 'gold-eagle-coin.svg')]")
+        print("[+] Coin element found")
+    except Exception as e:
+        print(f"[-] Coin not found: {e}")
+        driver.quit()
+        return
+
+    def simulate_tap(element):
+        actions = ActionChains(driver)
+        actions.move_to_element(element).click().perform()
+
+    batch_taps = 200
+    wait_between_batches = 180
+    cycles = 3
+    for cycle in range(1, cycles + 1):
+        print(f"[+] Cycle {cycle}: {batch_taps} taps")
+        for _ in range(batch_taps):
+            simulate_tap(coin_element)
+            time.sleep(0.05)
+        print(f"[+] Cycle {cycle} done. Waiting {wait_between_batches}s")
+        time.sleep(wait_between_batches)
+
+    print("[+] All cycles finished")
+    driver.quit()
+
+def start(update, context):
+    update.message.reply_text("بدأت عملية النقر في Gold Eagle!")
+    threading.Thread(target=run_gold_eagle_tapper).start()
+
+@app.route('/')
+def home():
+    return "Gold Eagle Tapper Bot is running!"
+
+if __name__ == "__main__":
+    updater = Updater("7791566802:AAHi9yJeBc8r1SxhmcCeYkRr4baDdG77UIE", use_context=True)
+    dp = updater.dispatcher
+    dp.add_handler(CommandHandler("start", start))
+    updater.start_webhook(listen="0.0.0.0", port=5000, url_path="7791566802:AAHi9yJeBc8r1SxhmcCeYkRr4baDdG77UIE")
+    updater.bot.setWebhook('https://gold-eagle-tapper.onrender.com/7791566802:AAHi9yJeBc8r1SxhmcCeYkRr4baDdG77UIE')
+    app.run(host='0.0.0.0', port=5000)
