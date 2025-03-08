@@ -1,2 +1,7 @@
+flask
+python-telegram-bot
+selenium
 requests
-numpy
+webdriver-manager
+selenium-wire
+blinker
