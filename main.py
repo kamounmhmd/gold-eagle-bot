@@ -3,7 +3,7 @@ import time
 import json
 import threading
 from flask import Flask
-from telegram.ext import Updater, CommandHandler
+from telegram.ext import Application, CommandHandler
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
@@ -73,7 +73,6 @@ def run_gold_eagle_tapper():
     driver.get(mini_app_url)
     time.sleep(5)
 
-    # حقن بيانات Session Storage
     driver.execute_script("""
         sessionStorage.setItem('tapps/launchParams', 'tgWebAppPlatform=ios&tgWebAppThemeParams=%7B%22bg_color%22%3A%22%23212121%22%2C%22button_color%22%3A%22%238774e1%22%2C%22button_text_color%22%3A%22%23ffffff%22%2C%22hint_color%22%3A%22%23aaaaaa%22%2C%22link_color%22%3A%22%238774e1%22%2C%22secondary_bg_color%22%3A%22%23181818%22%2C%22text_color%22%3A%22%23ffffff%22%2C%22header_bg_color%22%3A%22%23212121%22%2C%22accent_text_color%22%3A%22%238774e1%22%2C%22section_bg_color%22%3A%22%23212121%22%2C%22section_header_text_color%22%3A%22%238774e1%22%2C%22subtitle_text_color%22%3A%22%23aaaaaa%22%2C%22destructive_text_color%22%3A%22%23ff595a%22%7D&tgWebAppVersion=7.10&tgWebAppData=query_id%3DAAG8XExdAAAAALxcTF2ALyef%26user%3D%257B%2522id%2522%253A1565285564%252C%2522first_name%2522%253A%2522%E6%B0%94DARTON%E4%B9%88%2522%252C%2522last_name%2522%253A%2522%2522%252C%2522username%2522%253A%2522DartonTV%2522%252C%2522language_code%2522%253A%2522en%2522%252C%2522allows_write_to_pm%2522%253Atrue%257D');
         sessionStorage.setItem('__telegram__initParams', '{"tgWebAppData":"query_id=AAG8XExdAAAAALxcTF2ALyef&user=%7B%22id%22%3A1565285564%2C%22first_name%22%3A%22%E6%B0%94DARTON%E4%B9%88%22%2C%22last_name%22%3A%22%22%2C%22username%22%3A%22DartonTV%22%2C%22language_code%22%3A%22en%22%2C%22allows_write_to_pm%22%3Atrue%2C%22photo_url%22%3A%22https://t.me/i/userpic/320/iy3Hp0CdIo6mZaYfi83EHd7h2nPyXG1Fd5V50-SkD2I.svg%22%7D","auth_date":1741132592,"signature":"sGfdIFxIBcKtqrq2y6zzeUQNkypsglVlaN_LT8s1bp9EbnZVaNiSS7KapQx0llxh0IIjsx926e4oxpOyTPn5DA","hash":"970af2cd5d4ce4b680996870cf21e9762f1d387f096cf9eb1b58366724741d42"}');
@@ -81,7 +80,6 @@ def run_gold_eagle_tapper():
     """)
     time.sleep(2)
 
-    # حقن JavaScript الخارجي
     driver.execute_script("""
         var script = document.createElement('script');
         script.src = 'https://telegram.geagle.online/assets/index-BC9KxTS7.js';
@@ -115,8 +113,8 @@ def run_gold_eagle_tapper():
     print("[+] All cycles finished")
     driver.quit()
 
-def start(update, context):
-    update.message.reply_text("بدأت عملية النقر في Gold Eagle!")
+async def start(update, context):
+    await update.message.reply_text("بدأت عملية النقر في Gold Eagle!")
     threading.Thread(target=run_gold_eagle_tapper).start()
 
 @app.route('/')
@@ -124,9 +122,17 @@ def home():
     return "Gold Eagle Tapper Bot is running!"
 
 if __name__ == "__main__":
-    updater = Updater("7791566802:AAHi9yJeBc8r1SxhmcCeYkRr4baDdG77UIE", use_context=True)
-    dp = updater.dispatcher
-    dp.add_handler(CommandHandler("start", start))
-    updater.start_webhook(listen="0.0.0.0", port=5000, url_path="7791566802:AAHi9yJeBc8r1SxhmcCeYkRr4baDdG77UIE")
-    updater.bot.setWebhook('https://gold-eagle-tapper.onrender.com/7791566802:AAHi9yJeBc8r1SxhmcCeYkRr4baDdG77UIE')
+    # إعداد Application بدلاً من Updater
+    application = Application.builder().token("7791566802:AAHi9yJeBc8r1SxhmcCeYkRr4baDdG77UIE").build()
+    
+    # إضافة معالج الأوامر
+    application.add_handler(CommandHandler("start", start))
+    
+    # تشغيل Webhook
+    application.run_webhook(
+        listen="0.0.0.0",
+        port=5000,
+        url_path="7791566802:AAHi9yJeBc8r1SxhmcCeYkRr4baDdG77UIE",
+        webhook_url='https://gold-eagle-tapper.onrender.com/7791566802:AAHi9yJeBc8r1SxhmcCeYkRr4baDdG77UIE'
+    )
     app.run(host='0.0.0.0', port=5000)
