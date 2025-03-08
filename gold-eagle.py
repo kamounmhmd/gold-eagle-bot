@@ -1,164 +1,79 @@
-import requests
+import os
 import time
-import uuid
-import random
-import base64
-import hmac
-import hashlib
-import re
-import binascii
+import json
+import threading
+from flask import Flask
+from telegram.ext import Updater, CommandHandler
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.action_chains import ActionChains
+from webdriver_manager.chrome import ChromeDriverManager
+import requests
 
-def get_secret(url):
+app = Flask(__name__)
+
+def load_tokens(filename="data.txt"):
     try:
-        # Fetch the content from the provided URL
-        response = requests.get(url)
-        response.raise_for_status()
-        content = response.text
+        with open(filename, "r") as file:
+            tokens = [line.strip() for line in file if line.strip()]
+            return tokens
+    except FileNotFoundError:
+        return []
 
-        # Search for the TAP_SECRET variable in the content
-        match = re.search(r'TAP_SECRET\s*=\s*["\']([^"\']+)["\']', content)
-        if not match:
-            raise ValueError('TAP_SECRET variable not found.')
-
-        # Extract the TAP_SECRET value
-        tap_secret = match.group(1)
-
-        # Decode the TAP_SECRET value
-        secret_bytes = base64.b32decode(tap_secret, casefold=True)
-        secret_hex = binascii.hexlify(secret_bytes).decode()
-        return secret_hex
-    except Exception as e:
-        raise ValueError(f'Error fetching or decoding TAP_SECRET: {e}')
-
-
-def generate_totp_in_base64(secret_hex, step=2, digits=6, algorithm=hashlib.sha1):
-    secret_bytes = bytes.fromhex(secret_hex)
-    time_counter = int(time.time() // step)
-    time_counter_bytes = time_counter.to_bytes(8, byteorder="big")
-    hmac_hash = hmac.new(secret_bytes, time_counter_bytes, algorithm).digest()
-    offset = hmac_hash[-1] & 0x0F
-    code_int = int.from_bytes(hmac_hash[offset:offset+4], byteorder="big") & 0x7FFFFFFF
-    otp = code_int % (10 ** digits)
-    otp_str = str(otp).zfill(digits)
-    otp_base64 = base64.b64encode(otp_str.encode()).decode()
-    return otp_base64
-
-
-# URL containing the TAP_SECRET variable
-SECRET_URL = 'https://telegram.geagle.online/assets/index-DI7KSCOy.js'
-
-# Fetch the secret
-try:
-    secret_hex = get_secret(SECRET_URL)
-except Exception as e:
-    print(f"Error fetching secret: {e}")
-    exit(1)
-
-# Banner and styling
-PURPLE = "\033[35m"
-CYAN = "\033[36m"
-YELLOW = "\033[33m"
-GREEN = "\033[32m"
-RED = "\033[31m"
-BLUE = "\033[34m"
-BOLD = "\033[1m"
-UNDERLINE = "\033[4m"
-RESET = "\033[0m"
-
-ascii_banner = f"""
-{PURPLE}    ______      __        __  ______                 __
-   / ____/___  / /_____  / /_/ ____/______  ______  / /_____
-  / /_  / __ \/ //_/ _ \/ __/ /   / ___/ / / / __ \/ __/ __ \\
- / __/ / /_/ / ,< /  __/ /_/ /___/ /  / /_/ / /_/ / /_/ /_/ /
-/_/    \____/_/|_|\___/\__/\____/_/   \__, / .___/\__/\____/
-                                     /____/_/               {RESET}
-"""
-
-tagline = f"""
-{YELLOW} +-+-+-+-+-+-+ +-+-+-+-+ +-+-+ +-+-+-+-+ +-+-+-+-+-+-+-+-+
- |A|n|y|o|n|e| |w|a|n|t| |d|o| |s|o|m|e| |d|o|n|a|t|i|o|n|
- +-+-+-+-+-+-+ +-+-+-+-+ +-+-+ +-+-+-+-+ +-+-+-+-+-+-+-+-+ {RESET}
-"""
-
-print(f"{GREEN}{'=' * 70}{RESET}")
-print(f"{ascii_banner}")
-print(f"{tagline}")
-print(f"{GREEN}{'=' * 70}{RESET}")
-print(f"{YELLOW}{BOLD}{UNDERLINE}Telegram: https://t.me/foketcrypto{RESET}")
-print(f"{RED}{BOLD}{UNDERLINE}YouTube: https://youtube.com/@foketcrypto{RESET}")
-print(f"{GREEN}{'=' * 70}{RESET}")
-
-def send_request(available_taps, count, token, secret_hex, max_retries=3):
-    url = 'https://gold-eagle-api.fly.dev/tap'
+def check_balance(bearer_token):
     headers = {
-        'accept': 'application/json, text/plain, */*',
-        'accept-language': 'en-US,en;q=0.9',
-        'authorization': f'Bearer {token}',
-        'content-type': 'application/json',
-        'origin': 'https://telegram.geagle.online',
-        'priority': 'u=1, i',
-        'referer': 'https://telegram.geagle.online/',
-        'sec-ch-ua': '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
-        'sec-ch-ua-mobile': '?0',
-        'sec-ch-ua-platform': '"Windows"',
-        'sec-fetch-dest': 'empty',
-        'sec-fetch-mode': 'cors',
-        'sec-fetch-site': 'same-site',
-        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+        "authorization": f"Bearer {bearer_token}",
+        "content-type": "application/json",
+        "user-agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
     }
-
-    attempt = 0
-    while attempt < max_retries:
+    url = "https://gold-eagle-api.fly.dev/user/me/progress"
+    for _ in range(30):
         try:
-            nonce = generate_totp_in_base64(secret_hex=secret_hex)
-            data = {
-                "available_taps": available_taps,
-                "count": count,
-                "timestamp": int(time.time()),
-                "salt": str(uuid.uuid4()),
-                "nonce": nonce,
-            }
-            response = requests.post(url, headers=headers, json=data, timeout=10)
-            response.raise_for_status()
-            return response.json()
-        except requests.exceptions.Timeout:
-            attempt += 1
-            print(f"{RED}Request timed out. Retrying... Attempt {attempt}/{max_retries}{RESET}")
-            time.sleep(2)
-        except requests.exceptions.RequestException as e:
-            return {"error": str(e)}
+            response = requests.get(url, headers=headers, timeout=5)
+            if response.status_code == 200:
+                data = response.json()
+                print(f"[+] User coins: {data.get('coins_amount', 0)}")
+                return True
+        except Exception as e:
+            print(f"[-] API error: {e}")
+        time.sleep(1)
+    return False
 
-    return {"error": f"Request failed after {max_retries} attempts."}
+def setup_driver(bearer_token):
+    mobile_emulation = {
+        "deviceMetrics": {"width": 360, "height": 640, "pixelRatio": 3.0},
+        "userAgent": "Mozilla/5.0 (Linux; Android 10; SM-G973F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.106 Mobile Safari/537.36"
+    }
+    chrome_options = Options()
+    chrome_options.add_experimental_option("mobileEmulation", mobile_emulation)
+    chrome_options.add_argument("--headless")
+    chrome_options.add_argument("--disable-gpu")
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    service = Service(ChromeDriverManager().install())
+    driver = webdriver.Chrome(service=service, options=chrome_options)
+    driver.execute_cdp_cmd('Network.setExtraHTTPHeaders', {"headers": {"Authorization": f"Bearer {bearer_token}"}})
+    return driver
 
-# Read tokens from file
-try:
-    with open('data.txt', 'r') as file:
-        tokens = [line.strip() for line in file.readlines()]
-except Exception as e:
-    print(f"{RED}Error reading tokens from file: {e}{RESET}")
-    exit(1)
+def run_gold_eagle_tapper():
+    tokens = load_tokens()
+    if not tokens:
+        print("[-] No tokens in data.txt")
+        return
+    bearer_token = tokens[0]
 
-available_taps = 1000
+    if not check_balance(bearer_token):
+        print("[-] Failed to load user data")
+        return
 
-# Main loop
-while True:
-    for token in tokens:
-        print(f"\n{BLUE}Processing token: {token}{RESET}")
-        for i in range(1):
-            count = random.randint(510, 520)
-            response = send_request(available_taps, count, token, secret_hex)
-            
-            if "error" in response:
-                print(f"{RED}Error on request {i + 1}/4: {response['error']}{RESET}")
-            else:
-                print(f"{GREEN}Success on request {i + 1}/4: {response}{RESET}")
+    driver = setup_driver(bearer_token)
+    mini_app_url = "https://telegram.geagle.online/#tgWebAppData=query_id=AAG8XExdAAAAALxcTF2ALyef&tgWebAppThemeParams=%7B%22bg_color%22%3A%22%23212121%22%2C%22button_color%22%3A%22%238774e1%22%2C%22button_text_color%22%3A%22%23ffffff%22%2C%22hint_color%22%3A%22%23aaaaaa%22%2C%22link_color%22%3A%22%238774e1%22%2C%22secondary_bg_color%22%3A%22%23181818%22%2C%22text_color%22%3A%22%23ffffff%22%2C%22header_bg_color%22%3A%22%23212121%22%2C%22accent_text_color%22%3A%22%238774e1%22%2C%22section_bg_color%22%3A%22%23212121%22%2C%22section_header_text_color%22%3A%22%238774e1%22%2C%22subtitle_text_color%22%3A%22%23aaaaaa%22%2C%22destructive_text_color%22%3A%22%23ff595a%22%7D&tgWebAppVersion=7.10&tgWebAppPlatform=ios"
+    driver.get(mini_app_url)
+    time.sleep(5)
 
-            delay = random.uniform(2, 5)
-            print(f"{YELLOW}Calculated delay: {delay:.2f} seconds{RESET}")
-            time.sleep(delay)
-        
-        print(f"{BLUE}Completed 4 requests for token {token}.{RESET}")
-
-    sleep_time = random.uniform(8 * 60, 8.3* 60)
-    print(f"{RED}Sleeping for {sleep_time:.2f} seconds before processing next batch of tokens...{RESET}")
-    time.sleep(sleep_time)
+    driver.execute_script("""
+        sessionStorage.setItem('tapps/launchParams', 'tgWebAppPlatform=ios&tgWebAppThemeParams=%7B%22bg_color%22%3A%22%23212121%22%2C%22button_color%22%3A%22%238774e1%22%2C%22button_text_color%22%3A%22%23ffffff%22%2C%22hint_color%22%3A%22%23aaaaaa%22%2C%22link_color%22%3A%22%238774e1%22%2C%22secondary_bg_color%22%3A%22%23181818%22%2C%22text_color%22%3A%22%23ffffff%22%2C%22header_bg_color%22%3A%22%23212121%22%2C%22accent_text_color%22%3A%22%238774e1%22%2C%22section_bg_color%22%3A%22%23212121%22%2C%22section_header_text_color%22%3A%22%238774e1%22%2C%22subtitle_text_color%22%3A%22%23aaaaaa%22%2C%22destructive_text_color%22%3A%22%23ff595a%22%7D&tgWebAppVersion=7.10&tgWebAppData=query_id%3DAAG8XExdAAAAALxcTF2ALyef%26user%3D%257B%2522id%2522%253A1565285564%252C%2522first_name%2522%253A%2522%E6%B0%94DARTON%E4%B9%88%2522%252C%2522last_name%2522%253A%2522%2522%252C%2522username%2522%253A%2522DartonTV%2522%252C%2522language_code%2522%253A%2522en%2522%252C%2522allows_write_to_pm%2522%253Atrue%257D');
+        sessionStorage.setItem('__telegram__initParams', '{"tgWebAppData":"query_id=AAG8XExdAAAAALxcTF2ALyef&user=%7B%22id%22%3A1565285564%2C%22first_name%22%3A%22%E6%B0%94DARTON%E4%B9%88%22%2C%22last_name%22%3A%22%22%2C%22username%22%3A%22DartonTV%22%2C%22language_code%22%3A%22en%22%2C%22allows_write_to_pm%22%3Atrue%2C%22photo_url%22%3A%22https://t.me/i/userpic/320/iy3Hp0CdIo6mZaYfi83EHd7h2nPyXG1Fd5V50-SkD2I.svg%22%7D","auth_date":1741132592,"signature":"sGfdIFxIBcKtqrq2y6zzeUQNkypsglVlaN_LT8s1bp9EbnZVaNiSS7KapQx0llxh0IIjsx926e4oxpOyTPn5DA","hash":"970af2cd5d4ce4b680996870cf21e9762f1d387f096cf9eb1b58366724741d42"}');
+        sessionStorage.setItem('__telegram__themeParams', '{"bg_color":"#212121","button_color":"#8774e1","button_text_color":"#ffffff","hint_color":"#aaaaaa","link_color":"#8774e1","secondary_bg_color":"#181818","text_color":"#ffffff","header_bg_color":"#212121","accent_text_color":"
